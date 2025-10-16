@@ -10,18 +10,25 @@ RUN <<EOF
     useradd --uid 1000 --gid python --create-home --shell /bin/sh python
 EOF
 
-# ensure correct python version for pipx
-RUN python -m pip install pipx
-
 RUN <<EOF
     set -eux
+
+    # Install packages needed to add gpg keys to apt
     apt-get update
-    apt-get install --assume-yes --no-install-recommends wget
+    apt-get install --assume-yes --no-install-recommends wget apt-transport-https ca-certificates gnupg
+
+    # Prep sources for github CLI
     mkdir -p -m 755 /etc/apt/keyrings && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
     chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+
+    # Prep sources for google cloud
+    wget -qO- https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /etc/apt/keyrings/cloud.google.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list > /dev/null
+
     apt-get update
     apt-get install --assume-yes --no-install-recommends dumb-init \
+    pipx \
     nodejs \
     npm \
     unzip \
@@ -33,7 +40,8 @@ RUN <<EOF
     libbz2-dev \
     libsqlite3-dev \
     rabbitmq-server \
-    make
+    make \
+    google-cloud-cli
 
     rm -rf /var/lib/apt/lists/*
     apt-get clean
@@ -45,7 +53,8 @@ USER python
 VOLUME /home/python
 ENV PATH=/home/python/.local/bin:$PATH
 
-RUN pipx install poetry==2.1.1 && \
+RUN pipx install poetry && \
+    pipx inject poetry keyrings.google-artifactregistry-auth && \
     pipx install nox
 
 RUN cat <<EOF
@@ -58,6 +67,7 @@ pipx     $(pipx --version)
 poetry   $(poetry --version)
 gh cli   $(gh --version)
 git      $(git --version)
+gcloud   $(gcloud --version)
 EOF
 
 EXPOSE 8000
